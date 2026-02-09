@@ -24,8 +24,8 @@ In this case, the indexing process creates virtual folders to fill up these gaps
 ### Asset
 
 ```
-//config/packages/ci-hub.yaml
-    simple_rest_adapter:
+//config/packages/datahub_rest_adapter.yaml
+    datahub_rest_adapter:
         asset_provider: 'App\Elastic\AssetProvider'
 ```
 ```
@@ -69,8 +69,8 @@ Replace, modify or extend.
 ### DataObject
 
 ```
-//config/packages/ci-hub.yaml
-    simple_rest_adapter:
+//config/packages/datahub_rest_adapter.yaml
+    datahub_rest_adapter:
         data_object_provider: 'App\Elastic\DataObjectProvider'
 ```
 ```

@@ -13,7 +13,7 @@ We are the owner of The Pimcore Connector Bundle due to our commitment to the Op
  
 Here is the GitHub Community Board if you like to collaborate with the community on how to improve or enhance the Pimcore Connector Bundle.
  
-In addition, if you consider commercial Pimcore Implementation we are ready to help with Implementation and adapting it to your Corporate needs. We do offer commercial support as BrandOriented for specific commercial Pimcore implementations. To get more details about the process and maybe involved cost, please contact us: sales@brandoriented.io, https://pimcore.effiana.com.
+In addition, if you consider commercial Pimcore Implementation we are ready to help with Implementation and adapting it to your Corporate needs. We do offer commercial support as PORTA DESIGN for specific commercial Pimcore implementations. To get more details about the process and maybe involved cost, please contact us: development@portadesign.cz, [portadesign.cz/pimcore](https://portadesign.cz/pimcore).
  
 So you can choose what works best for you.
 
@@ -51,10 +51,12 @@ So you can choose what works best for you.
 * [User authorization](docs/00-user-authorization.md)
 * [Endpoint Configuration Details](docs/01-endpoint-configuration.md)
 * [Indexing Details](docs/02-indexing.md)
-* [CI HUB Connector Configuration](docs/04-connector.md)
-* [Development](docs/05-development.md)
+* [Development](docs/04-development.md)
 
 ## License
+**PORTA DESIGN s.r.o.**\
+[portadesign.cz](portadesign.cz), development@portadesign.cz\
+Copyright © 2026 PORTA DESIGN s.r.o. All rights reserved.
 
 **Brand Oriented**, Okopowa 33/26, 01-059 Warszawa, Polska  
 [brandoriented.pl](https://brandoriented.pl), biuro@brandoriented.pl  

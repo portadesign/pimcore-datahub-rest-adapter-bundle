@@ -10,7 +10,7 @@ docker compose exec php-fpm composer require pimcore/data-hub
 docker compose exec php-fpm php bin/console pimcore:bundle:install PimcoreDataHubBundle
 
 # 2. SimpleRESTAdapterBundle
-docker compose exec php-fpm composer require ci-hub/simple-rest-adapter-bundle
+docker compose exec php-fpm composer require portadesign/pimcore-datahub-rest-adapter-bundle
 docker compose exec php-fpm bin/console pimcore:bundle:install SimpleRESTAdapterBundle
 ```
 
@@ -23,9 +23,18 @@ services:
     elasticsearch:
         image: elasticsearch:8.1.0
         container_name: 'elasticsearch'
+        volumes:
+          - elasticsearch-data:/usr/share/elasticsearch/data
+        ports:
+          - '9200:9200'
+          - '9300:9300'
         environment:
-          - xpack.security.enabled=false
-          - discovery.type=single-node
+            - cluster.name=docker-cluster
+            - bootstrap.memory_lock=true
+            - discovery.type=single-node
+            - xpack.security.enabled=false
+            - action.destructive_requires_name=false
+            - 'ES_JAVA_OPTS=-Xms128m -Xmx128m'
         ulimits:
           memlock:
             soft: -1
@@ -35,18 +44,11 @@ services:
             hard: 65536
         cap_add:
           - IPC_LOCK
-        volumes:
-          - 'elasticsearch-data:/usr/share/elasticsearch/data'
-        ports:
-          - '9200:9200'
-          - '9300:9300'
-
 # ...
 
 volumes:
     # ...
     elasticsearch-data:
-      driver: local
 ```
 
 > Note: We are using Elasticsearch version 8.1 here – sometimes that might conflict with

@@ -1,31 +1,41 @@
 # Installation
-This bundle depends on the [Pimcore DataHub](https://github.com/pimcore/data-hub), which needs to be installed first.
+This bundle depends on [Pimcore DataHub](https://github.com/pimcore/data-hub) and [Pimcore Elasticsearch Client](https://github.com/pimcore/elasticsearch-client). Both need to be installed first.
 
 To install the Simple REST Adapter complete following steps:
+
 1. Install via composer
   ```shell
-  composer require bo-hub/ci-hub-adapter-bundle
-  composer require bo-hub/ci-hub-api-bundle
+  composer require portadesign/pimcore-datahub-rest-adapter-bundle
   ```
 
-2. Enable via command-line (or inside the Pimcore extension manager)
+2. Register the bundle in `config/bundles.php`:
+  ```php
+  return [
+      // Pimcore\Bundle\DataHubBundle\PimcoreDataHubBundle::class => ['all' => true],
+      // Pimcore\Bundle\ElasticsearchClientBundle\PimcoreElasticsearchClientBundle::class => ['all' => true],
+      // ... other bundles
+      CIHub\Bundle\SimpleRESTAdapterBundle\SimpleRESTAdapterBundle::class => ['all' => true],
+  ];
+  ```
+
+3. Install via command-line (or inside the Pimcore extension manager)
   ```shell
-  bin/console pimcore:bundle:enable SimpleRESTAdapterBundle
+  bin/console pimcore:bundle:install SimpleRESTAdapterBundle
   ```
   
-3. Extend security.yaml
+4. Extend security.yaml
   ```yaml
   access_control:
     - { path: ^/datahub, roles: PUBLIC_ACCESS }
   ```
 
-4. Clear cache and reload Pimcore
+5. Clear cache and reload Pimcore
   ```shell
   bin/console cache:clear --no-warmup
   ```
 
 > Make sure, that the priority of the Pimcore DataHub is higher than the priority of the Simple REST Adapter.
-> This can be specified as parameter of the `pimcore:bundle:enable` command or in the Pimcore extension manager.
+> This can be specified as parameter of the `pimcore:bundle:install` command or in the Pimcore extension manager.
 
 ### Other Examples
 * [Docker Setup](03-docker-setup-example.md)
@@ -46,12 +56,6 @@ datahub_rest_adapter:
 
     # Default transformer for the filter parameter. Used in search and tree-items endpoint.
     filter_field_name_transformer: 'CIHub\Bundle\SimpleRESTAdapterBundle\Transformer\FilterFieldNameTransformer'
-
-    # List of Elasticsearch hosts.
-    es_hosts:
-
-        # Default:
-        - localhost
 
     # Global Elasticsearch index settings.
     index_settings:

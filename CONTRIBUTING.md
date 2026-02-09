@@ -18,7 +18,7 @@ We believe that open collaboration leads to the best results. To contribute to t
 
 6. **Commit your changes**: Once you are satisfied with your changes, commit them with clear and concise commit messages that explain the purpose of the changes.
 
-7. **Pull Request**: Push your changes to your forked repository and create a Pull Request (PR) to the `master` branch of the original repository. Provide a detailed description of the changes you made, the problem you solved, and any other relevant information.
+7. **Pull Request**: Push your changes to your forked repository and create a Pull Request (PR) to the `main` branch of the original repository. Provide a detailed description of the changes you made, the problem you solved, and any other relevant information.
 
 8. **Code Review**: The project maintainers will review your Pull Request. Be prepared to make changes or address any feedback you receive during the review process.
 

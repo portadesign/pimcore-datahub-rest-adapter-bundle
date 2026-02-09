@@ -1,4 +1,4 @@
-# BrandOriented Code of Conduct
+# PORTA DESIGN Code of Conduct
 
 ## Our Pledge
 
@@ -40,13 +40,13 @@ This Code of Conduct applies when an individual is representing the project or i
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by first contacting the project team at opensource@brandoriented.io. 
-Oversight of Brand Oriented projects is handled by the Brand Oriented Open Source Team, which has final say in any violations and enforcement of this Code of Conduct and can be reached at opensource@brandoriented.io. 
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by first contacting the project team at development@portadesign.cz.
+Oversight of this project is handled by PORTA DESIGN, which has final say in any violations and enforcement of this Code of Conduct and can be reached at development@portadesign.cz. 
 All complaints will be reviewed and investigated promptly and fairly.
 
 The project team must respect the privacy and security of the reporter of any incident.
 
-Project maintainers who do not follow or enforce the Code of Conduct may face temporary or permanent repercussions as determined by other members of the project's leadership or the Brand Oriented Open Source Team.
+Project maintainers who do not follow or enforce the Code of Conduct may face temporary or permanent repercussions as determined by other members of the project's leadership or PORTA DESIGN.
 
 ## Enforcement Guidelines
 
