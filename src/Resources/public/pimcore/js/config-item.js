@@ -371,6 +371,7 @@ pimcore.plugin.simpleRestAdapterBundle.configuration.configItem = Class.create(p
                     key: fieldKeys[i],
                     label: field.fieldConfig.label,
                     dataType: field.fieldConfig.type,
+                    layout: field.fieldConfig.layout,
                 };
                 if (field.fieldConfig.width) {
                     fc.width = field.fieldConfig.width;
@@ -408,9 +409,7 @@ pimcore.plugin.simpleRestAdapterBundle.configuration.configItem = Class.create(p
                 //convert to data array as grid uses it
                 for (let i = 0; i < data.columns.length; i++) {
                     let curr = data.columns[i];
-
-                    //remove layout information as it is not needed
-                    delete curr.layout;
+                    
                     columns[curr.key] = {
                         name: curr.key,
                         position: (i + 1),

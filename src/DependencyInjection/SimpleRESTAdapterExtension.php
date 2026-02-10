@@ -46,6 +46,11 @@ final class SimpleRESTAdapterExtension extends Extension implements PrependExten
 {
     private array $ciHubConfig = [];
 
+    public function getAlias(): string
+    {
+        return 'datahub_rest_adapter';
+    }
+
     /**
      * @throws \Exception
      */
