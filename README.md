@@ -1,5 +1,4 @@
 [![Software License](https://img.shields.io/badge/license-GPLv3-brightgreen.svg?style=flat-square)](LICENSE.md)
-[![Latest Stable Version](https://img.shields.io/packagist/v/w/simple-rest-adapter-bundle.svg?style=flat-square)](https://packagist.org/packages/ci-hub/simple-rest-adapter-bundle)
 
 This bundle adds a REST API endpoints to [Pimcore DataHub](https://github.com/pimcore/data-hub)
 for Assets and DataObjects. All exposed data can be configured, is indexed in Elasticsearch and delivered from there
