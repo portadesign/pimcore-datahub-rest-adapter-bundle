@@ -1,13 +1,13 @@
 {
-  "name": "bo-hub/ci-hub-api-bundle",
+  "name": "portadesign/pimcore-datahub-rest-adapter-bundle",
   "type": "pimcore-bundle",
   "license": "GPL-3.0-or-later",
-  "description": "REST Adapter for CI-HUB",
+  "description": "REST Adapter for Pimcore DataHub",
   "keywords": [
     "pimcore",
     "pimcore-bundle"
   ],
-  "homepage": "https://github.com/BrandOriented/PimcoreCiHubConnector",
+  "homepage": "https://github.com/portadesign/pimcore-datahub-rest-adapter-bundle",
   "authors": [
     {
       "name": "CI HUB GmbH",
@@ -24,11 +24,17 @@
       "name": "Dominik Labudzinski",
       "email": "dominik@labudzinski.com",
       "role": "Developer"
+    },
+    {
+      "name": "PORTA DESIGN",
+      "email": "development@portadesign.cz",
+      "homepage": "https://portadesign.cz",
+      "role": "Developer"
     }
   ],
   "support": {
-    "issues": "https://github.com/BrandOriented/PimcoreCiHubConnector/issues",
-    "docs": "https://github.com/BrandOriented/PimcoreCiHubConnector/blob/master/README.md"
+    "issues": "https://github.com/portadesign/pimcore-datahub-rest-adapter-bundle/issues",
+    "docs": "https://github.com/portadesign/pimcore-datahub-rest-adapter-bundle/blob/main/README.md"
   },
   "prefer-stable": true,
   "minimum-stability": "stable",

@@ -1,6 +1,7 @@
 # License
-Copyright (C) 2016-2021 CI HUB GmbH
-Copyright (C) 2023 Brand Oriented
+Copyright (C) 2016-2021 CI HUB GmbH\
+Copyright (C) 2023 Brand Oriented\
+Copyright (C) 2026 PORTA DESIGN s.r.o.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
