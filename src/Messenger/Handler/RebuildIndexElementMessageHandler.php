@@ -18,7 +18,9 @@ use CIHub\Bundle\SimpleRESTAdapterBundle\Manager\IndexManager;
 use CIHub\Bundle\SimpleRESTAdapterBundle\Messenger\RebuildIndexElementMessage;
 use CIHub\Bundle\SimpleRESTAdapterBundle\Messenger\RebuildUpdateIndexElementMessage;
 use CIHub\Bundle\SimpleRESTAdapterBundle\Reader\ConfigReader;
+use CIHub\Bundle\SimpleRESTAdapterBundle\Utils\WorkspaceSorter;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception as DBALException;
 use Pimcore\Db;
 use Pimcore\Model\Asset;
 use Pimcore\Model\Asset\Folder;
@@ -31,6 +33,9 @@ use Symfony\Component\Messenger\MessageBusInterface;
 #[AsMessageHandler]
 final readonly class RebuildIndexElementMessageHandler
 {
+    private const CONDITION_DISTINCT = 'distinct';
+    private const CONDITION_INCLUSIVE = 'inclusive';
+    private const CONDITION_EXCLUSIVE = 'exclusive';
     public const CHUNK_SIZE = 100;
 
     public const TYPE_ASSET = 'asset';
@@ -71,28 +76,174 @@ final readonly class RebuildIndexElementMessageHandler
     private function rebuildType(
         RebuildIndexElementMessage $rebuildIndexElementMessage, string $type, string $hash, int &$todo): void
     {
-        $maxId = $this->getDb()->executeQuery("SELECT MAX(id) FROM {$type}s")->fetchNumeric()[0];
-        for ($start = 0; $start <= $maxId; $start += self::CHUNK_SIZE) {
-            $end = $start + self::CHUNK_SIZE;
-            $items = $this->getDb()
-                ->executeQuery("SELECT id, parentId FROM {$type}s WHERE id >= $start AND id < $end")
-                ->fetchAllAssociative()
-            ;
-            foreach ($items as $item) {
-                $this->messageBus->dispatch(
-                    new RebuildUpdateIndexElementMessage($item['id'], $type, $rebuildIndexElementMessage->name, $hash, $rebuildIndexElementMessage->configReader));
-                $this->enqueueParentFolders(
-                    self::TYPE_ASSET === $type ? Asset::getById($item['parentId']) : DataObject::getById($item['parentId']),
-                    self::TYPE_ASSET === $type ? Folder::class : DataObject\Folder::class,
+        $configReader = $rebuildIndexElementMessage->configReader;
+        $workspace = WorkspaceSorter::sort($configReader->getWorkspace($type));
+
+        if ([] === $workspace) {
+            return;
+        }
+
+        [$conditions, $params] = $this->buildConditions(
+            $workspace,
+            self::TYPE_ASSET === $type ? 'filename' : 'key',
+            'path',
+        );
+
+        if (! isset($conditions[self::CONDITION_INCLUSIVE]) || [] === $conditions[self::CONDITION_INCLUSIVE] || [] === $params) {
+            return;
+        }
+
+        $ids = $this->fetchIdsFromDatabaseTable(
+            "{$type}s",
+            'id',
+            $conditions,
+            $params,
+        );
+
+        foreach ($ids as $id) {
+            $this->messageBus->dispatch(
+                new RebuildUpdateIndexElementMessage(
+                    (int) $id,
                     $type,
                     $rebuildIndexElementMessage->name,
                     $hash,
-                    $todo,
-                    $rebuildIndexElementMessage->configReader
-                );
-                ++$todo;
-            }
+                    $configReader,
+                ),
+            );
+
+            $element = self::TYPE_ASSET === $type ? Asset::getById((int) $id) : DataObject::getById((int) $id);
+            $parent = $element ? $element->getParent() : null;
+
+            $this->enqueueParentFolders(
+                $parent,
+                self::TYPE_ASSET === $type ? Folder::class : DataObject\Folder::class,
+                $type,
+                $rebuildIndexElementMessage->name,
+                $hash,
+                $todo,
+                $configReader,
+            );
+            ++$todo;
         }
+    }
+
+    /**
+     * @param array<int, array> $workspace
+     *
+     * @return array{0: array<string, array<int, string>>, 1: array<string, string>}
+     */
+    private function buildConditions(array $workspace, string $keyColumn, string $pathColumn): array
+    {
+        $conditions = [];
+        $params = [];
+
+        if ([] === $workspace) {
+            return [$conditions, $params];
+        }
+
+        foreach ($workspace as $item) {
+            $read = $item['read'] ?? null;
+            $path = $item['cpath'] ?? null;
+
+            if (null === $read || null === $path || '' === $path) {
+                continue;
+            }
+
+            $pathParts = explode('/', (string) $path);
+
+            // If not root folder, add distinct conditions.
+            if (\count($pathParts) > 2 || '' !== $pathParts[1]) {
+                $this->addDistinctConditions($pathParts, $keyColumn, $pathColumn, $conditions, $params);
+            }
+
+            // Always add the ex-/inclusive conditions.
+            $pathIndex = uniqid('path_', false);
+            $conditions[$read ? self::CONDITION_INCLUSIVE : self::CONDITION_EXCLUSIVE][] = sprintf(
+                '`%s` %s :%s',
+                $pathColumn,
+                $read ? 'LIKE' : 'NOT LIKE',
+                $pathIndex,
+            );
+            $params[$pathIndex] = rtrim((string) $path, '/') . '/%';
+        }
+
+        return [$conditions, $params];
+    }
+
+    /**
+     * @param array<int, string>       $pathParts
+     * @param array<string, string[]>  $conditions
+     * @param array<string, string>    $params
+     */
+    private function addDistinctConditions(
+        array $pathParts,
+        string $keyColumn,
+        string $pathColumn,
+        array &$conditions,
+        array &$params,
+    ): void {
+        $keyIndex = uniqid('key_', false);
+        $keyPathIndex = uniqid('key_path_', false);
+        $keyParam = array_pop($pathParts);
+        $keyPathParam = implode('/', $pathParts) . '/';
+
+        if (! \in_array((string) $keyParam, $params, true)) {
+            $conditions[self::CONDITION_DISTINCT][] = sprintf(
+                '(`%s` = :%s AND `%s` = :%s)',
+                $keyColumn,
+                $keyIndex,
+                $pathColumn,
+                $keyPathIndex,
+            );
+
+            $params[$keyIndex] = (string) $keyParam;
+            $params[$keyPathIndex] = $keyPathParam;
+        }
+
+        // Add parent folders to distinct conditions as well.
+        if (\count($pathParts) > 1) {
+            $this->addDistinctConditions($pathParts, $keyColumn, $pathColumn, $conditions, $params);
+        }
+    }
+
+    /**
+     * Runs the database query and returns found IDs.
+     *
+     * @param array<string, array<int, string>> $conditions
+     * @param array<string, string>             $params
+     *
+     * @return array<int, int>
+     */
+    private function fetchIdsFromDatabaseTable(
+        string $from,
+        string $select,
+        array $conditions,
+        array $params,
+    ): array {
+        $qb = $this->getDb()
+            ->createQueryBuilder()
+            ->select($select)
+            ->from($from)
+            ->where(implode(' OR ', $conditions[self::CONDITION_INCLUSIVE] ?? []))
+            ->setParameters($params);
+
+        if (isset($conditions[self::CONDITION_DISTINCT])) {
+            $qb->orWhere(implode(' OR ', $conditions[self::CONDITION_DISTINCT]));
+        }
+
+        if (isset($conditions[self::CONDITION_EXCLUSIVE])) {
+            $qb->andWhere(implode(' OR ', $conditions[self::CONDITION_EXCLUSIVE]));
+        }
+
+        try {
+            $statement = $qb->executeQuery();
+            /** @var array<int, int> $ids */
+            $ids = array_map('intval', $statement->fetchFirstColumn());
+        } catch (DBALException $e) {
+            $ids = [];
+        }
+
+        return $ids;
     }
 
     private function enqueueParentFolders(
@@ -102,7 +253,7 @@ final readonly class RebuildIndexElementMessageHandler
         string $name,
         string $hash,
         int &$todo,
-        ConfigReader $configReader
+        ConfigReader $configReader,
     ): void {
         while ($element instanceof $folderClass && 1 !== $element->getId()) {
             $this->messageBus->dispatch(new RebuildUpdateIndexElementMessage($element->getId(), $type, $name, $hash, $configReader));
@@ -137,6 +288,6 @@ final readonly class RebuildIndexElementMessageHandler
 
     public function getNewIndexName(string $index): string
     {
-        return str_ends_with($index, '-odd') ? str_replace('-odd', '', $index).'-even' : str_replace('-even', '', $index).'-odd';
+        return str_ends_with($index, '-odd') ? str_replace('-odd', '', $index) . '-even' : str_replace('-even', '', $index) . '-odd';
     }
 }

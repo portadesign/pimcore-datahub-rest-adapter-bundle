@@ -88,7 +88,7 @@ pimcore.plugin.simpleRestAdapterBundle.user.profile = Class.create(pimcore.setti
             },
             items: [{
                 xtype: 'fieldset',
-                title: t('CI-HUB Settings'),
+                title: t('REST API Settings'),
                 items: [
                     {
                         xtype: 'fieldcontainer',
