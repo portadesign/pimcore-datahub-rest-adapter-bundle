@@ -12,6 +12,7 @@
 
 namespace CIHub\Bundle\SimpleRESTAdapterBundle;
 
+use CIHub\Bundle\SimpleRESTAdapterBundle\DependencyInjection\SimpleRESTAdapterExtension;
 use Nelmio\ApiDocBundle\NelmioApiDocBundle;
 use Pimcore\Extension\Bundle\AbstractPimcoreBundle;
 use Pimcore\Extension\Bundle\Installer\InstallerInterface;
@@ -20,13 +21,19 @@ use Pimcore\Extension\Bundle\Traits\BundleAdminClassicTrait;
 use Pimcore\Extension\Bundle\Traits\PackageVersionTrait;
 use Pimcore\HttpKernel\Bundle\DependentBundleInterface;
 use Pimcore\HttpKernel\BundleCollection\BundleCollection;
+use Symfony\Component\DependencyInjection\Extension\ExtensionInterface;
 
 final class SimpleRESTAdapterBundle extends AbstractPimcoreBundle implements DependentBundleInterface, PimcoreBundleAdminClassicInterface
 {
     use BundleAdminClassicTrait;
     use PackageVersionTrait;
 
-    public const PACKAGE_NAME = 'bo-hub/ci-hub-api-bundle';
+    public const PACKAGE_NAME = 'portadesign/pimcore-datahub-rest-adapter-bundle';
+
+    public function getContainerExtension(): ?ExtensionInterface
+    {
+        return new SimpleRESTAdapterExtension();
+    }
 
     public function getInstaller(): ?InstallerInterface
     {
