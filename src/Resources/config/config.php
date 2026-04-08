@@ -34,7 +34,7 @@ return static function (ContainerConfigurator $containerConfigurator): void {
             'info' => [
                 'title' => 'Pimcore DataHub REST Adapter',
                 'description' => 'Endpoints provided by the REST Adapter Bundle.',
-                'version' => InstalledVersions::getPrettyVersion('bo-hub/ci-hub-api-bundle'),
+                'version' => InstalledVersions::getPrettyVersion('portadesign/pimcore-datahub-rest-adapter-bundle'),
                 'license' => [
                     'name' => 'GPL 3.0',
                     'url' => 'https://www.gnu.org/licenses/gpl-3.0.html',

@@ -17,7 +17,9 @@ pimcore.plugin.simpleRestAdapterBundle.configuration.configItem = Class.create(p
         return [
             this.getGeneral(),
             this.getSchema(),
-            this.getLabelSettings()
+            this.getWorkspaces(),
+            this.getLabelSettings(),
+            this.getDeliverySettings()
         ];
     },
     initialize: function (data, parent) {
@@ -260,6 +262,35 @@ pimcore.plugin.simpleRestAdapterBundle.configuration.configItem = Class.create(p
         });
 
         return this.schemaForm;
+    },
+
+    getWorkspaces: function () {
+        this.assetWorkspace = new pimcore.plugin.datahub.workspace.asset(this);
+        this.assetWorkspace.availableRights = ['read'];
+
+        this.objectWorkspace = new pimcore.plugin.datahub.workspace.object(this);
+        this.objectWorkspace.availableRights = ['read'];
+
+        return new Ext.form.FormPanel({
+            bodyStyle: 'padding:10px;',
+            autoScroll: true,
+            defaults: {
+                labelWidth: 200,
+            },
+            border: false,
+            title: t('plugin_pimcore_datahub_rest_configpanel_workspaces'),
+            items: [
+                {
+                    xtype: 'fieldset',
+                    width: 800,
+                    title: t('workspaces'),
+                    items: [
+                        this.assetWorkspace.getPanel(),
+                        this.objectWorkspace.getPanel(),
+                    ],
+                },
+            ],
+        });
     },
 
     createSchemaStoreAndGrid: function () {
@@ -551,6 +582,52 @@ pimcore.plugin.simpleRestAdapterBundle.configuration.configItem = Class.create(p
         });
     },
 
+    getDeliverySettings: function () {
+        return new Ext.form.FormPanel({
+            bodyStyle: 'padding:10px;',
+            autoScroll: true,
+            defaults: {
+                labelWidth: 200,
+            },
+            border: false,
+            title: t('plugin_pimcore_datahub_rest_configpanel_delivery_settings'),
+            items: [
+                {
+                    xtype: 'displayfield',
+                    hideLabel: false,
+                    value: this.data.swaggerUrl,
+                    fieldLabel: t('plugin_pimcore_datahub_rest_delivery_swagger_url'),
+                    readOnly: false,
+                    disabled: false,
+                },
+                {
+                    xtype: 'displayfield',
+                    hideLabel: false,
+                    value: this.data.treeItemsUrl,
+                    fieldLabel: t('plugin_pimcore_datahub_rest_delivery_tree_items_url'),
+                    readOnly: false,
+                    disabled: false,
+                },
+                {
+                    xtype: 'displayfield',
+                    hideLabel: false,
+                    value: this.data.searchUrl,
+                    fieldLabel: t('plugin_pimcore_datahub_rest_delivery_search_url'),
+                    readOnly: false,
+                    disabled: false,
+                },
+                {
+                    xtype: 'displayfield',
+                    hideLabel: false,
+                    value: this.data.getElementByIdUrl,
+                    fieldLabel: t('plugin_pimcore_datahub_rest_delivery_get_element_by_id_url'),
+                    readOnly: false,
+                    disabled: false,
+                },
+            ],
+        });
+    },
+
     filterIds: function (dataArray) {
         for (let i = 0; i < dataArray.length; i++) {
             const currentData = dataArray[i];
@@ -566,6 +643,10 @@ pimcore.plugin.simpleRestAdapterBundle.configuration.configItem = Class.create(p
         saveData['schema'] = {};
         saveData['schema']['assets'] = this.schemaForm.getForm().getValues();
         saveData['schema']['dataObjectClasses'] = this.getSchemaData('dataObject');
+
+        saveData['workspaces'] = {};
+        saveData['workspaces']['asset'] = this.filterIds(this.assetWorkspace.getValues());
+        saveData['workspaces']['object'] = this.filterIds(this.objectWorkspace.getValues());
 
         const labelData = [];
         const labelRecords = this.labelStore.getData();

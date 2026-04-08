@@ -168,7 +168,7 @@ class RebuildIndexCommand extends Command
             $id = (int)$result['id'];
             $element = $this->getElement($id, $type);
 
-            $elementType = match ($element) {
+            $elementType = match (true) {
                 $element instanceof Asset => $element->getType(),
                 $element instanceof DataObject\Concrete => $element->getClass()->getName(),
                 default => 'object',

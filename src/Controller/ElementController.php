@@ -13,9 +13,13 @@
 namespace CIHub\Bundle\SimpleRESTAdapterBundle\Controller;
 
 use CIHub\Bundle\SimpleRESTAdapterBundle\Elasticsearch\Index\IndexPersistenceService;
+use CIHub\Bundle\SimpleRESTAdapterBundle\Elasticsearch\Index\IndexQueryService;
 use CIHub\Bundle\SimpleRESTAdapterBundle\Helper\AssetHelper;
+use CIHub\Bundle\SimpleRESTAdapterBundle\Manager\IndexManager;
 use CIHub\Bundle\SimpleRESTAdapterBundle\Reader\ConfigReader;
 use CIHub\Bundle\SimpleRESTAdapterBundle\Traits\RestHelperTrait;
+use Elastic\Elasticsearch\Exception\ClientResponseException;
+use CIHub\Bundle\SimpleRESTAdapterBundle\Exception\NotFoundException;
 use Nelmio\ApiDocBundle\Attribute\Security;
 use OpenApi\Attributes as OA;
 use Pimcore\Logger;
@@ -24,12 +28,10 @@ use Pimcore\Model\Asset;
 use Pimcore\Model\Asset\Image;
 use Pimcore\Model\DataObject;
 use Pimcore\Model\Element\Service;
-use Pimcore\Model\Element\Tag;
 use Pimcore\Model\Version;
 use Pimcore\Model\Version\Listing;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Route(path: ['/datahub/rest/{config}/element', '/pimcore-datahub-webservices/simplerest/{config}'], name: 'datahub_rest_endpoints_element_')]
@@ -50,7 +52,7 @@ final class ElementController extends BaseEndpointController
             new OA\Parameter(
                 name: 'Authorization',
                 description: 'Bearer (in Swagger UI use authorize feature to set header)',
-                in: 'header'
+                in: 'header',
             ),
             new OA\Parameter(
                 name: 'config',
@@ -58,8 +60,8 @@ final class ElementController extends BaseEndpointController
                 in: 'path',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'string'
-                )
+                    type: 'string',
+                ),
             ),
             new OA\Parameter(
                 name: 'type',
@@ -68,8 +70,8 @@ final class ElementController extends BaseEndpointController
                 required: true,
                 schema: new OA\Schema(
                     type: 'string',
-                    enum: ['asset', 'object']
-                )
+                    enum: ['asset', 'object'],
+                ),
             ),
             new OA\Parameter(
                 name: 'id',
@@ -77,8 +79,8 @@ final class ElementController extends BaseEndpointController
                 in: 'query',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'integer'
-                )
+                    type: 'integer',
+                ),
             ),
         ],
         responses: [
@@ -90,7 +92,7 @@ final class ElementController extends BaseEndpointController
                         new OA\Property(
                             property: 'id',
                             description: 'Element ID',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'Parent ID',
@@ -100,17 +102,17 @@ final class ElementController extends BaseEndpointController
                         new OA\Property(
                             property: 'name',
                             description: 'Element name',
-                            type: 'string'
+                            type: 'string',
                         ),
                         new OA\Property(
                             property: 'type',
                             description: 'Type of element',
-                            type: 'string'
+                            type: 'string',
                         ),
                         new OA\Property(
                             property: 'locked',
                             description: 'Element is locked?',
-                            type: 'boolean'
+                            type: 'boolean',
                         ),
                         new OA\Property(
                             property: 'tags',
@@ -119,26 +121,27 @@ final class ElementController extends BaseEndpointController
                             items: new OA\Items(type: 'string'),
                         ),
                     ],
-                    type: 'object'
-                )
+                    type: 'object',
+                ),
             ),
             new OA\Response(
                 response: 400,
-                description: 'Not found'
+                description: 'Not found',
             ),
             new OA\Response(
                 response: 401,
-                description: 'Access denied'
+                description: 'Access denied',
             ),
             new OA\Response(
                 response: 500,
-                description: 'Server error'
+                description: 'Server error',
             ),
         ],
     )]
-    public function getElementAction(AssetHelper $assetHelper): JsonResponse
+    public function getElementAction(IndexManager $indexManager, IndexQueryService $indexService): JsonResponse
     {
         $this->authManager->checkAuthentication();
+
         try {
             $configuration = $this->getDataHubConfiguration();
             $configReader = new ConfigReader($configuration->getConfiguration());
@@ -148,26 +151,62 @@ final class ElementController extends BaseEndpointController
                 'message' => $ex->getMessage(),
             ]);
         }
-        $elementByIdType = $this->getElementByIdType();
-        $elementType = $elementByIdType instanceof Asset ? 'asset' : 'object';
-        if (!$elementByIdType->isAllowed('view', $this->user)) {
-            return new JsonResponse(['success' => false, 'message' => 'Missing the permission to list in the folder: '.$elementByIdType->getRealFullPath()]);
+
+        $element = $this->getElementByIdType();
+        $elementType = $element instanceof Asset ? 'asset' : 'object';
+
+        if (! $element->isAllowed('view', $this->user)) {
+            return new JsonResponse([
+                'success' => false,
+                'message' => sprintf(
+                    'Missing the permission to list in the folder: %s',
+                    $element->getRealFullPath(),
+                ),
+            ]);
         }
-        $tags = Tag::getTagsForElement('asset', $elementByIdType->getId());
 
-        $result = [
-            'id' => $elementByIdType->getId(),
-            'parentId' => $elementByIdType->getParentId(),
-            'name' => $elementByIdType->getKey(),
-            'type' => $elementByIdType->getType(),
-            'locked' => $assetHelper->isLocked($elementByIdType->getId(), $elementType, $this->user->getId()),
-            'tags' => array_map(fn (Tag $tag): array => [
-                'label' => $tag->getName(),
-            ], $tags),
-        ];
-        $result = $this->getAssetMetaData($elementByIdType, $result, $configReader);
+        $indices = [];
 
-        return $this->json($result);
+        if ($elementType === 'asset' && $configReader->isAssetIndexingEnabled()) {
+            $indices = [$indexManager->getIndexName(IndexManager::INDEX_ASSET, $this->config)];
+        } elseif ($elementType === 'object' && $configReader->isObjectIndexingEnabled()) {
+            $indices = array_map(
+                fn (string $className): string => $indexManager->getIndexName(mb_strtolower($className), $this->config),
+                $configReader->getObjectClassNames(),
+            );
+        }
+
+        if (empty($indices)) {
+            throw new NotFoundException(sprintf(
+                '%s with id [%d] does not exist',
+                $elementType,
+                $element->getId(),
+            ));
+        }
+
+        $result = [];
+
+        foreach ($indices as $index) {
+            try {
+                $result = $indexService->get($element->getId(), $index);
+            } catch (ClientResponseException $exception) {
+                $result = [];
+            }
+
+            if (! empty($result['found']) && $result['found'] === true) {
+                break;
+            }
+        }
+
+        if (empty($result) || empty($result['found']) || $result['found'] === false) {
+            throw new NotFoundException(sprintf(
+                '%s with id [%d] does not exist',
+                $elementType,
+                $element->getId(),
+            ));
+        }
+        
+        return $this->json($this->buildResponse($result, $configReader));
     }
 
     #[Route('', name: 'delete', methods: ['DELETE'])]
@@ -178,7 +217,7 @@ final class ElementController extends BaseEndpointController
             new OA\Parameter(
                 name: 'Authorization',
                 description: 'Bearer (in Swagger UI use authorize feature to set header)',
-                in: 'header'
+                in: 'header',
             ),
             new OA\Parameter(
                 name: 'config',
@@ -186,8 +225,8 @@ final class ElementController extends BaseEndpointController
                 in: 'path',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'string'
-                )
+                    type: 'string',
+                ),
             ),
             new OA\Parameter(
                 name: 'type',
@@ -196,8 +235,8 @@ final class ElementController extends BaseEndpointController
                 required: true,
                 schema: new OA\Schema(
                     type: 'string',
-                    enum: ['asset', 'object']
-                )
+                    enum: ['asset', 'object'],
+                ),
             ),
             new OA\Parameter(
                 name: 'id',
@@ -205,8 +244,8 @@ final class ElementController extends BaseEndpointController
                 in: 'query',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'integer'
-                )
+                    type: 'integer',
+                ),
             ),
         ],
         responses: [
@@ -218,7 +257,7 @@ final class ElementController extends BaseEndpointController
                         new OA\Property(
                             property: 'success',
                             description: 'Success status.',
-                            type: 'boolean'
+                            type: 'boolean',
                         ),
                         new OA\Property(
                             property: 'message',
@@ -226,20 +265,20 @@ final class ElementController extends BaseEndpointController
                             type: 'string',
                         ),
                     ],
-                    type: 'object'
-                )
+                    type: 'object',
+                ),
             ),
             new OA\Response(
                 response: 400,
-                description: 'Not found'
+                description: 'Not found',
             ),
             new OA\Response(
                 response: 401,
-                description: 'Access denied'
+                description: 'Access denied',
             ),
             new OA\Response(
                 response: 500,
-                description: 'Server error'
+                description: 'Server error',
             ),
         ],
     )]
@@ -252,11 +291,11 @@ final class ElementController extends BaseEndpointController
 
             return new JsonResponse([
                 'success' => true,
-                'message' => $type.' in the folder: '.$elementByIdType->getParent()->getRealFullPath().' was deleted',
+                'message' => $type . ' in the folder: ' . $elementByIdType->getParent()->getRealFullPath() . ' was deleted',
             ]);
         }
 
-        return new JsonResponse(['success' => false, 'message' => 'Missing the permission to remove '.$type.' in the folder: '.$elementByIdType->getParent()->getRealFullPath()]);
+        return new JsonResponse(['success' => false, 'message' => 'Missing the permission to remove ' . $type . ' in the folder: ' . $elementByIdType->getParent()->getRealFullPath()]);
     }
 
     #[Route('/version', name: 'version', methods: ['GET'])]
@@ -267,7 +306,7 @@ final class ElementController extends BaseEndpointController
             new OA\Parameter(
                 name: 'Authorization',
                 description: 'Bearer (in Swagger UI use authorize feature to set header)',
-                in: 'header'
+                in: 'header',
             ),
             new OA\Parameter(
                 name: 'config',
@@ -275,8 +314,8 @@ final class ElementController extends BaseEndpointController
                 in: 'path',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'string'
-                )
+                    type: 'string',
+                ),
             ),
             new OA\Parameter(
                 name: 'type',
@@ -285,8 +324,8 @@ final class ElementController extends BaseEndpointController
                 required: true,
                 schema: new OA\Schema(
                     type: 'string',
-                    enum: ['asset', 'object']
-                )
+                    enum: ['asset', 'object'],
+                ),
             ),
             new OA\Parameter(
                 name: 'id',
@@ -294,8 +333,8 @@ final class ElementController extends BaseEndpointController
                 in: 'query',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'integer'
-                )
+                    type: 'integer',
+                ),
             ),
         ],
         responses: [
@@ -307,42 +346,42 @@ final class ElementController extends BaseEndpointController
                         new OA\Property(
                             property: 'id',
                             description: 'Version ID',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'cid',
                             description: 'Asset ID',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'ctype',
                             description: 'Object type',
-                            type: 'string'
+                            type: 'string',
                         ),
                         new OA\Property(
                             property: 'note',
                             description: 'Version note',
-                            type: 'string'
+                            type: 'string',
                         ),
                         new OA\Property(
                             property: 'date',
                             description: 'Timestamp of version creation',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'public',
                             description: 'Version is public?',
-                            type: 'boolean'
+                            type: 'boolean',
                         ),
                         new OA\Property(
                             property: 'versionCount',
                             description: 'Version sequence number',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'autoSave',
                             description: 'Version is auto-save?',
-                            type: 'boolean'
+                            type: 'boolean',
                         ),
                         new OA\Property(
                             property: 'user',
@@ -351,14 +390,14 @@ final class ElementController extends BaseEndpointController
                                 properties: [
                                     new OA\Property(
                                         property: 'name',
-                                        type: 'string'
+                                        type: 'string',
                                     ),
                                     new OA\Property(
                                         property: 'id',
-                                        type: 'integer'
+                                        type: 'integer',
                                     ),
-                                ]
-                            )
+                                ],
+                            ),
                         ),
                         new OA\Property(
                             property: 'metadata',
@@ -367,44 +406,44 @@ final class ElementController extends BaseEndpointController
                                 properties: [
                                     new OA\Property(
                                         property: 'data',
-                                        type: 'string'
+                                        type: 'string',
                                     ),
                                     new OA\Property(
                                         property: 'language',
                                         type: 'string',
-                                        nullable: true
+                                        nullable: true,
                                     ),
                                     new OA\Property(
                                         property: 'name',
-                                        type: 'string'
+                                        type: 'string',
                                     ),
                                     new OA\Property(
                                         property: 'type',
-                                        type: 'string'
+                                        type: 'string',
                                     ),
                                     new OA\Property(
                                         property: 'config',
                                         type: 'string',
-                                        nullable: true
+                                        nullable: true,
                                     ),
-                                ]
-                            )
+                                ],
+                            ),
                         ),
                     ],
-                    type: 'object'
-                )
+                    type: 'object',
+                ),
             ),
             new OA\Response(
                 response: 400,
-                description: 'Not found'
+                description: 'Not found',
             ),
             new OA\Response(
                 response: 401,
-                description: 'Access denied'
+                description: 'Access denied',
             ),
             new OA\Response(
                 response: 500,
-                description: 'Server error'
+                description: 'Server error',
             ),
         ],
     )]
@@ -445,7 +484,7 @@ final class ElementController extends BaseEndpointController
             new OA\Parameter(
                 name: 'Authorization',
                 description: 'Bearer (in Swagger UI use authorize feature to set header)',
-                in: 'header'
+                in: 'header',
             ),
             new OA\Parameter(
                 name: 'config',
@@ -453,8 +492,8 @@ final class ElementController extends BaseEndpointController
                 in: 'path',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'string'
-                )
+                    type: 'string',
+                ),
             ),
             new OA\Parameter(
                 name: 'type',
@@ -463,8 +502,8 @@ final class ElementController extends BaseEndpointController
                 required: true,
                 schema: new OA\Schema(
                     type: 'string',
-                    enum: ['asset', 'object']
-                )
+                    enum: ['asset', 'object'],
+                ),
             ),
             new OA\Parameter(
                 name: 'id',
@@ -472,8 +511,8 @@ final class ElementController extends BaseEndpointController
                 in: 'query',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'integer'
-                )
+                    type: 'integer',
+                ),
             ),
         ],
         responses: [
@@ -485,42 +524,42 @@ final class ElementController extends BaseEndpointController
                         new OA\Property(
                             property: 'id',
                             description: 'Version ID',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'cid',
                             description: 'Asset ID',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'ctype',
                             description: 'Object type',
-                            type: 'string'
+                            type: 'string',
                         ),
                         new OA\Property(
                             property: 'note',
                             description: 'Version note',
-                            type: 'string'
+                            type: 'string',
                         ),
                         new OA\Property(
                             property: 'date',
                             description: 'Timestamp of version creation',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'public',
                             description: 'Version is public?',
-                            type: 'boolean'
+                            type: 'boolean',
                         ),
                         new OA\Property(
                             property: 'versionCount',
                             description: 'Version sequence number',
-                            type: 'integer'
+                            type: 'integer',
                         ),
                         new OA\Property(
                             property: 'autoSave',
                             description: 'Version is auto-save?',
-                            type: 'boolean'
+                            type: 'boolean',
                         ),
                         new OA\Property(
                             property: 'user',
@@ -529,14 +568,14 @@ final class ElementController extends BaseEndpointController
                                 properties: [
                                     new OA\Property(
                                         property: 'name',
-                                        type: 'string'
+                                        type: 'string',
                                     ),
                                     new OA\Property(
                                         property: 'id',
-                                        type: 'integer'
+                                        type: 'integer',
                                     ),
-                                ]
-                            )
+                                ],
+                            ),
                         ),
                         new OA\Property(
                             property: 'index',
@@ -547,20 +586,20 @@ final class ElementController extends BaseEndpointController
                             type: 'integer',
                         ),
                     ],
-                    type: 'object'
-                )
+                    type: 'object',
+                ),
             ),
             new OA\Response(
                 response: 400,
-                description: 'Not found'
+                description: 'Not found',
             ),
             new OA\Response(
                 response: 401,
-                description: 'Access denied'
+                description: 'Access denied',
             ),
             new OA\Response(
                 response: 500,
-                description: 'Server error'
+                description: 'Server error',
             ),
         ],
     )]
@@ -641,7 +680,7 @@ final class ElementController extends BaseEndpointController
                 'items' => $versions,
             ]);
         } else {
-            return new JsonResponse(['success' => false, 'message' => 'Permission denied, '.$type.' id ['.$elementByIdType->getId().']']);
+            return new JsonResponse(['success' => false, 'message' => 'Permission denied, ' . $type . ' id [' . $elementByIdType->getId() . ']']);
         }
     }
 
@@ -653,7 +692,7 @@ final class ElementController extends BaseEndpointController
             new OA\Parameter(
                 name: 'Authorization',
                 description: 'Bearer (in Swagger UI use authorize feature to set header)',
-                in: 'header'
+                in: 'header',
             ),
             new OA\Parameter(
                 name: 'config',
@@ -661,8 +700,8 @@ final class ElementController extends BaseEndpointController
                 in: 'path',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'string'
-                )
+                    type: 'string',
+                ),
             ),
             new OA\Parameter(
                 name: 'type',
@@ -671,8 +710,8 @@ final class ElementController extends BaseEndpointController
                 required: true,
                 schema: new OA\Schema(
                     type: 'string',
-                    enum: ['asset', 'object']
-                )
+                    enum: ['asset', 'object'],
+                ),
             ),
             new OA\Parameter(
                 name: 'id',
@@ -680,8 +719,8 @@ final class ElementController extends BaseEndpointController
                 in: 'query',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'integer'
-                )
+                    type: 'integer',
+                ),
             ),
         ],
         responses: [
@@ -693,7 +732,7 @@ final class ElementController extends BaseEndpointController
                         new OA\Property(
                             property: 'success',
                             description: 'Success status.',
-                            type: 'boolean'
+                            type: 'boolean',
                         ),
                         new OA\Property(
                             property: 'message',
@@ -701,20 +740,20 @@ final class ElementController extends BaseEndpointController
                             type: 'string',
                         ),
                     ],
-                    type: 'object'
-                )
+                    type: 'object',
+                ),
             ),
             new OA\Response(
                 response: 400,
-                description: 'Not found'
+                description: 'Not found',
             ),
             new OA\Response(
                 response: 401,
-                description: 'Access denied'
+                description: 'Access denied',
             ),
             new OA\Response(
                 response: 500,
-                description: 'Server error'
+                description: 'Server error',
             ),
         ],
     )]
@@ -727,7 +766,7 @@ final class ElementController extends BaseEndpointController
                 || $elementByIdType->isAllowed('delete', $this->user))
         ) {
             if ($assetHelper->isLocked($elementByIdType->getId(), $elementType, $this->user->getId())) {
-                return new JsonResponse(['success' => false, 'message' => $elementType.' with id ['.$elementByIdType->getId().'] is already locked for editing'], 403);
+                return new JsonResponse(['success' => false, 'message' => $elementType . ' with id [' . $elementByIdType->getId() . '] is already locked for editing'], 403);
             }
 
             $assetHelper->lock($elementByIdType->getId(), $elementType, $this->user->getId());
@@ -735,16 +774,16 @@ final class ElementController extends BaseEndpointController
                 $indexPersistenceService->update(
                     $elementByIdType,
                     $elementType,
-                    $this->request->get('config')
+                    $this->request->get('config'),
                 );
             } catch (\Exception $e) {
                 Logger::crit($e->getMessage());
             }
 
-            return new JsonResponse(['success' => true, 'message' => $elementType.' with id ['.$elementByIdType->getId().'] was just locked']);
+            return new JsonResponse(['success' => true, 'message' => $elementType . ' with id [' . $elementByIdType->getId() . '] was just locked']);
         }
 
-        return new JsonResponse(['success' => false, 'message' => 'Missing the permission to create new '.$elementType.' in the folder: '.$elementByIdType->getParent()->getRealFullPath()]);
+        return new JsonResponse(['success' => false, 'message' => 'Missing the permission to create new ' . $elementType . ' in the folder: ' . $elementByIdType->getParent()->getRealFullPath()]);
     }
 
     #[Route('/unlock', name: 'unlock', methods: ['POST'])]
@@ -755,7 +794,7 @@ final class ElementController extends BaseEndpointController
             new OA\Parameter(
                 name: 'Authorization',
                 description: 'Bearer (in Swagger UI use authorize feature to set header)',
-                in: 'header'
+                in: 'header',
             ),
             new OA\Parameter(
                 name: 'config',
@@ -763,8 +802,8 @@ final class ElementController extends BaseEndpointController
                 in: 'path',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'string'
-                )
+                    type: 'string',
+                ),
             ),
             new OA\Parameter(
                 name: 'type',
@@ -773,8 +812,8 @@ final class ElementController extends BaseEndpointController
                 required: true,
                 schema: new OA\Schema(
                     type: 'string',
-                    enum: ['asset', 'object']
-                )
+                    enum: ['asset', 'object'],
+                ),
             ),
             new OA\Parameter(
                 name: 'id',
@@ -782,8 +821,8 @@ final class ElementController extends BaseEndpointController
                 in: 'query',
                 required: true,
                 schema: new OA\Schema(
-                    type: 'integer'
-                )
+                    type: 'integer',
+                ),
             ),
         ],
         responses: [
@@ -795,7 +834,7 @@ final class ElementController extends BaseEndpointController
                         new OA\Property(
                             property: 'success',
                             description: 'Success status.',
-                            type: 'boolean'
+                            type: 'boolean',
                         ),
                         new OA\Property(
                             property: 'message',
@@ -803,20 +842,20 @@ final class ElementController extends BaseEndpointController
                             type: 'string',
                         ),
                     ],
-                    type: 'object'
-                )
+                    type: 'object',
+                ),
             ),
             new OA\Response(
                 response: 400,
-                description: 'Not found'
+                description: 'Not found',
             ),
             new OA\Response(
                 response: 401,
-                description: 'Access denied'
+                description: 'Access denied',
             ),
             new OA\Response(
                 response: 500,
-                description: 'Server error'
+                description: 'Server error',
             ),
         ],
     )]
@@ -829,26 +868,26 @@ final class ElementController extends BaseEndpointController
             if ($assetHelper->isLocked($elementByIdType->getId(), $elementType, $this->user->getId())) {
                 $unlocked = $assetHelper->unlockForLocker($this->user->getId(), $elementByIdType->getId());
                 if ($unlocked) {
-                    return new JsonResponse(['success' => true, 'message' => $elementType.' with id ['.$elementByIdType->getId().'] has been unlocked for editing']);
+                    return new JsonResponse(['success' => true, 'message' => $elementType . ' with id [' . $elementByIdType->getId() . '] has been unlocked for editing']);
                 }
 
                 try {
                     $indexPersistenceService->update(
                         $elementByIdType,
                         $elementType,
-                        $this->request->get('config')
+                        $this->request->get('config'),
                     );
                 } catch (\Exception $e) {
                     Logger::crit($e->getMessage());
                 }
 
-                return new JsonResponse(['success' => true, 'message' => $elementType.' with id ['.$elementByIdType->getId().'] is locked for editing'], 403);
+                return new JsonResponse(['success' => true, 'message' => $elementType . ' with id [' . $elementByIdType->getId() . '] is locked for editing'], 403);
             }
 
-            return new JsonResponse(['success' => false, 'message' => $elementType.' with id ['.$elementByIdType->getId().'] is already unlocked for editing']);
+            return new JsonResponse(['success' => false, 'message' => $elementType . ' with id [' . $elementByIdType->getId() . '] is already unlocked for editing']);
         }
 
-        return new JsonResponse(['success' => false, 'message' => 'Missing the permission to create new '.$elementType.' in the folder: '.$elementByIdType->getParent()->getRealFullPath()]);
+        return new JsonResponse(['success' => false, 'message' => 'Missing the permission to create new ' . $elementType . ' in the folder: ' . $elementByIdType->getParent()->getRealFullPath()]);
     }
 
     /**
@@ -856,7 +895,7 @@ final class ElementController extends BaseEndpointController
      */
     private function getAssetMetaData(AbstractModel $model, $result, ConfigReader $configReader): array
     {
-        if (($model instanceof Asset || $model instanceof Version) && !$model instanceof Asset\Folder) {
+        if (($model instanceof Asset || $model instanceof Version) && ! $model instanceof Asset\Folder) {
             if ($model instanceof Version) {
                 $version = $model->getData();
                 if ($version) {

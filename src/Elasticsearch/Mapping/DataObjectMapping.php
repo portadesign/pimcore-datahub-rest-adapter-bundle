@@ -98,7 +98,11 @@ final class DataObjectMapping extends DefaultMapping
                 continue;
             }
 
-            $properties[$column['name']] = $this->getPropertiesForFieldConfig($column['fieldConfig']);
+            if (\array_key_exists('isOperator', $column['fieldConfig']) && $column['fieldConfig']['isOperator'] === true) {
+                $properties[$column['fieldConfig']['attributes']['label']] = $this->getPropertiesForFieldConfig($column['fieldConfig']);
+            } else {
+                $properties[$column['name']] = $this->getPropertiesForFieldConfig($column['fieldConfig']);
+            }
         }
 
         return $properties;
@@ -113,6 +117,20 @@ final class DataObjectMapping extends DefaultMapping
      */
     private function getPropertiesForFieldConfig(array $objectClassConfig): array
     {
+        if (! isset($objectClassConfig['type'])) {
+            return [
+                'type' => 'keyword',
+                'fields' => [
+                    'analyzed' => [
+                        'type' => 'text',
+                        'term_vector' => 'yes',
+                        'analyzer' => 'datahub_ngram_analyzer',
+                        'search_analyzer' => 'datahub_whitespace_analyzer',
+                    ],
+                ],
+            ];
+        }
+
         return match ($objectClassConfig['type']) {
             'hotspotimage', 'image' => array_merge($this->getImageProperties(), [
                 'dynamic' => 'false',

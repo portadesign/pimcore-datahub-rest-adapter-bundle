@@ -22,7 +22,6 @@ use Pimcore\Model\DataObject;
 use Pimcore\Model\DataObject\AbstractObject;
 use Pimcore\Model\DataObject\Concrete;
 use Pimcore\Model\Element\ElementInterface;
-use Pimcore\Tool;
 use Webmozart\Assert\Assert;
 
 trait HasDataObjectProvider
@@ -65,7 +64,7 @@ trait HasDataObjectProvider
             $gridConfigData['helperDefinitions'],
             new LocaleService(),
             'title',
-            false
+            false,
         );
 
         return $this->prepareExportDataForExtraction($gridConfigData['helperDefinitions'], $data);
@@ -79,13 +78,6 @@ trait HasDataObjectProvider
             if ($field != $mappedFieldName) {
                 $data[$mappedFieldName] = $data[$field];
                 unset($data[$field]);
-                $field = $mappedFieldName;
-            }
-
-            $fieldConfigType = $definition['fieldConfig']['type'] ?? null;
-
-            if ('link' == $fieldConfigType) {
-                $data[$field] = (string) Tool\Serialize::unserialize(base64_decode((string) $data[$field], true));
             }
         }
 
@@ -106,7 +98,6 @@ trait HasDataObjectProvider
             'parentId' => $object->getParentId(),
             'type' => 'object',
             'subtype' => $object->getType(),
-            'className' => $object->getClassName(),
             'hasChildren' => $object->hasChildren(),
             'creationDate' => $object->getCreationDate(),
             'modificationDate' => $object->getModificationDate(),
@@ -135,8 +126,9 @@ trait HasDataObjectProvider
                 ];
             },
             array_keys($helperDefinitions),
-            $helperDefinitions
+            $helperDefinitions,
         );
+        
         foreach ($helperDefinitions as $k => $v) {
             if (DataObject\Service::isHelperGridColumnConfig($k)) {
                 $helperDefinitions[$k] = json_decode(json_encode($v['fieldConfig']));
@@ -154,7 +146,7 @@ trait HasDataObjectProvider
     protected function mapFieldName($field, $definition): string
     {
         if (str_starts_with((string) $field, '#') && $definition) {
-            if (!empty($definition->attributes)) {
+            if (! empty($definition->attributes)) {
                 return $definition->attributes->label ?: $field;
             }
 
