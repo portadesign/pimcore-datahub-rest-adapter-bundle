@@ -234,16 +234,10 @@ final readonly class RebuildIndexElementMessageHandler
         if (isset($conditions[self::CONDITION_EXCLUSIVE])) {
             $qb->andWhere(implode(' AND ', $conditions[self::CONDITION_EXCLUSIVE]));
         }
+        
+        $statement = $qb->executeQuery();
 
-        try {
-            $statement = $qb->executeQuery();
-            /** @var array<int, int> $ids */
-            $ids = array_map('intval', $statement->fetchFirstColumn());
-        } catch (DBALException $e) {
-            $ids = [];
-        }
-
-        return $ids;
+        return array_map('intval', $statement->fetchFirstColumn());
     }
 
     private function enqueueParentFolders(
