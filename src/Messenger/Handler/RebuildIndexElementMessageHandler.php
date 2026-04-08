@@ -232,7 +232,7 @@ final readonly class RebuildIndexElementMessageHandler
         }
 
         if (isset($conditions[self::CONDITION_EXCLUSIVE])) {
-            $qb->andWhere(implode(' OR ', $conditions[self::CONDITION_EXCLUSIVE]));
+            $qb->andWhere(implode(' AND ', $conditions[self::CONDITION_EXCLUSIVE]));
         }
 
         try {
